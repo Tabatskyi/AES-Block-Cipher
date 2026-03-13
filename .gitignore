@@ -19,3 +19,4 @@ CMakeUserPresets.json
 # CLion
 cmake-build-*/
 .idea/
+*.pyc

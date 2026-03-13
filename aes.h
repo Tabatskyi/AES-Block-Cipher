@@ -11,7 +11,7 @@
 #define AES_KEY192 24u
 #define AES_KEY256 32u
 
-typedef enum : uint8_t {
+typedef enum {
     AES_KEYLEN_128 = AES_KEY128,
     AES_KEYLEN_192 = AES_KEY192,
     AES_KEYLEN_256 = AES_KEY256,
