@@ -131,7 +131,7 @@ void aes_clear(AesCtx *ctx)
     for (size_t i = 0; i < sizeof *ctx; ++i) p[i] = 0;
 }
 
-// State helpers — the 4×4 byte matrix is stored column-major in four uint32_t words (s[col]), matching FIPS 197 &3.4.
+// State helpers — the 4x4 byte matrix is stored column-major in four uint32_t words (s[col]), matching FIPS 197 &3.4.
 
 typedef uint32_t State[4]; // s[c] = word for column c 
 
@@ -301,7 +301,7 @@ void aes_encrypt_block(const AesCtx *ctx, uint8_t out[AES_BLOCK_SIZE], const uin
         add_round_key(s, ctx->roundKey + 4u * round);
     }
 
-    // Final round — no MixColumns. 
+    // Final round - no MixColumns. 
     sub_bytes(s);
     shift_rows(s);
     add_round_key(s, ctx->roundKey + 4u * ctx->numRounds);
@@ -323,10 +323,136 @@ void aes_decrypt_block(const AesCtx *ctx, uint8_t out[AES_BLOCK_SIZE], const uin
         inv_mix_columns(s);
     }
 
-    // Final round — no InvMixColumns. 
+    // Final round - no InvMixColumns. 
     inv_shift_rows(s);
     inv_sub_bytes(s);
     add_round_key(s, ctx->roundKey);
 
     state_to_bytes(out, s);
+}
+
+int aes_ecb_encrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len)
+{
+    if ((len % AES_BLOCK_SIZE) != 0u) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < len; i += AES_BLOCK_SIZE) {
+        aes_encrypt_block(ctx, out + i, in + i);
+    }
+    return 0;
+}
+
+int aes_ecb_decrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len)
+{
+    if ((len % AES_BLOCK_SIZE) != 0u) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < len; i += AES_BLOCK_SIZE) {
+        aes_decrypt_block(ctx, out + i, in + i);
+    }
+    return 0;
+}
+
+int aes_cbc_encrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len, const uint8_t iv[AES_BLOCK_SIZE])
+{
+    if ((len % AES_BLOCK_SIZE) != 0u) {
+        return -1;
+    }
+
+    uint8_t prev[AES_BLOCK_SIZE];
+    memcpy(prev, iv, AES_BLOCK_SIZE);
+
+    for (size_t i = 0; i < len; i += AES_BLOCK_SIZE) {
+        uint8_t x[AES_BLOCK_SIZE];
+        for (size_t j = 0; j < AES_BLOCK_SIZE; ++j) {
+            x[j] = (uint8_t)(in[i + j] ^ prev[j]);
+        }
+        aes_encrypt_block(ctx, out + i, x);
+        memcpy(prev, out + i, AES_BLOCK_SIZE);
+    }
+    return 0;
+}
+
+int aes_cbc_decrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len, const uint8_t iv[AES_BLOCK_SIZE])
+{
+    if ((len % AES_BLOCK_SIZE) != 0u) {
+        return -1;
+    }
+
+    uint8_t prev[AES_BLOCK_SIZE];
+    memcpy(prev, iv, AES_BLOCK_SIZE);
+
+    for (size_t i = 0; i < len; i += AES_BLOCK_SIZE) {
+        uint8_t dec[AES_BLOCK_SIZE];
+        aes_decrypt_block(ctx, dec, in + i);
+        for (size_t j = 0; j < AES_BLOCK_SIZE; ++j) {
+            out[i + j] = (uint8_t)(dec[j] ^ prev[j]);
+        }
+        memcpy(prev, in + i, AES_BLOCK_SIZE);
+    }
+    return 0;
+}
+
+int aes_cfb128_encrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len, const uint8_t iv[AES_BLOCK_SIZE])
+{
+    uint8_t reg[AES_BLOCK_SIZE];
+    memcpy(reg, iv, AES_BLOCK_SIZE);
+
+    size_t i = 0;
+    while (i < len) {
+        uint8_t ks[AES_BLOCK_SIZE];
+        aes_encrypt_block(ctx, ks, reg);
+
+        size_t n = len - i;
+        if (n > AES_BLOCK_SIZE) {
+            n = AES_BLOCK_SIZE;
+        }
+
+        for (size_t j = 0; j < n; ++j) {
+            out[i + j] = (uint8_t)(in[i + j] ^ ks[j]);
+        }
+
+        if (n == AES_BLOCK_SIZE) {
+            memcpy(reg, out + i, AES_BLOCK_SIZE);
+        } else {
+            memmove(reg, reg + n, AES_BLOCK_SIZE - n);
+            memcpy(reg + (AES_BLOCK_SIZE - n), out + i, n);
+        }
+
+        i += n;
+    }
+    return 0;
+}
+
+int aes_cfb128_decrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len, const uint8_t iv[AES_BLOCK_SIZE])
+{
+    uint8_t reg[AES_BLOCK_SIZE];
+    memcpy(reg, iv, AES_BLOCK_SIZE);
+
+    size_t i = 0;
+    while (i < len) {
+        uint8_t ks[AES_BLOCK_SIZE];
+        aes_encrypt_block(ctx, ks, reg);
+
+        size_t n = len - i;
+        if (n > AES_BLOCK_SIZE) {
+            n = AES_BLOCK_SIZE;
+        }
+
+        for (size_t j = 0; j < n; ++j) {
+            out[i + j] = (uint8_t)(in[i + j] ^ ks[j]);
+        }
+
+        if (n == AES_BLOCK_SIZE) {
+            memcpy(reg, in + i, AES_BLOCK_SIZE);
+        } else {
+            memmove(reg, reg + n, AES_BLOCK_SIZE - n);
+            memcpy(reg + (AES_BLOCK_SIZE - n), in + i, n);
+        }
+
+        i += n;
+    }
+    return 0;
 }

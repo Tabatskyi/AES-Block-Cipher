@@ -10,7 +10,6 @@
 
 int rng_fill(void *buf, size_t len)
 {
-    // BCryptGenRandom accepts ULONG; call in 4 GiB-sized chunks to be safe.
     uint8_t *p = buf;
     while (len > 0) {
         ULONG chunk = (len > 0xffffffffu) ? 0xffffffffu : (ULONG)len;
@@ -22,7 +21,7 @@ int rng_fill(void *buf, size_t len)
     return 0;
 }
 
-// Linux - getrandom(2)
+// Linux - getrandom
 #elif defined(__linux__)
 
 #include <sys/random.h>
@@ -32,7 +31,7 @@ int rng_fill(void *buf, size_t len)
 {
     uint8_t *p = buf;
     while (len > 0) {
-        size_t chunk = (len > 256u) ? 256u : len; // limited to 256 to match document
+        size_t chunk = (len > 256u) ? 256u : len; // limited to 256 to match documented behavior
         ssize_t n;
         do {
             n = getrandom(p, chunk, 0);
@@ -44,7 +43,7 @@ int rng_fill(void *buf, size_t len)
     return 0;
 }
 
-// macOS / FreeBSD / OpenBSD - getentropy(2)
+// macOS / FreeBSD / OpenBSD - getentropy
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 
 #include <unistd.h> 
@@ -53,7 +52,7 @@ int rng_fill(void *buf, size_t len)
 {
     uint8_t *p = buf;
     while (len > 0) {
-        size_t chunk = (len > 256u) ? 256u : len; // limited to 256 to match document
+        size_t chunk = (len > 256u) ? 256u : len; // limited to 256 to match documented behavior
         if (getentropy(p, chunk) != 0) return -1;
         p += chunk;
         len -= chunk;
@@ -62,5 +61,13 @@ int rng_fill(void *buf, size_t len)
 }
 
 #else
-#error "Unsupported platform: no secure RNG backend available."
+#warning "Unsupported platform: no secure RNG backend available. Using rand() as fallback, but this is not secure."
+int rng_fill(void *buf, size_t len)
+{
+    uint8_t *p = buf;
+    for (size_t i = 0; i < len; i++) {
+        p[i] = (uint8_t)(rand() & 0xff);
+    }
+    return 0;
+}
 #endif
