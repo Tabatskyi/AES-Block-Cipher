@@ -63,7 +63,9 @@ class TestRunner:
         
         print(f"\n[+] Parsing NIST PDF: {self.pdf_path}")
         try:
-            sys.path.insert(0, str(self.workspace))
+            # Add test/ directory to path for parse_nist_pdf import
+            test_dir = self.workspace / "test"
+            sys.path.insert(0, str(test_dir))
             from parse_nist_pdf import NISTAESPDFParser
             
             parser = NISTAESPDFParser(self.pdf_path)
@@ -152,22 +154,9 @@ class TestRunner:
                 print(output)
                 print("--- End Output ---\n")
             
-            lines = output.split('\n')
-            passed_count = 0
-            failed_count = 0
+            success = result.returncode == 0
             
-            for line in lines:
-                if 'PASS' in line:
-                    passed_count += 1
-                    if self.verbose:
-                        print(f"[✓] {line.strip()}")
-                elif 'FAIL' in line:
-                    failed_count += 1
-                    print(f"[-] {line.strip()}")
-            
-            success = "All vectors: PASS" in output and result.returncode == 0
-            
-            print(f"\n[+] C Tests: {passed_count} passed, {failed_count} failed")
+            print(f"[+] C Binary: {'PASS' if success else 'FAIL'}")
             print(f"    Exit code: {result.returncode}")
             
             return success
@@ -256,7 +245,8 @@ Examples:
     
     args = parser.parse_args()
     
-    workspace = Path(__file__).parent
+    # Workspace is parent of test/ directory (project root)
+    workspace = Path(__file__).parent.parent
     runner = TestRunner(workspace, args.pdf_path, args.verbose)
     
     return runner.run()

@@ -90,58 +90,57 @@ class NISTAESPDFParser:
         """Extract test vectors from PDF text"""
         vectors = {}
         
-        # Pattern to match test vector sections
-        # Looking for patterns like "Key=" or "KEY="
-        key_pattern = re.compile(r'Key\s*[:=]\s*([a-fA-F0-9\s]+)', re.IGNORECASE)
-        iv_pattern = re.compile(r'IV\s*[:=]\s*([a-fA-F0-9\s]+)', re.IGNORECASE)
-        pt_pattern = re.compile(r'Plaintext\s*[:=]\s*([a-fA-F0-9\s]+)', re.IGNORECASE)
-        ct_pattern = re.compile(r'Ciphertext\s*[:=]\s*([a-fA-F0-9\s]+)', re.IGNORECASE)
-        mode_pattern = re.compile(r'(ECB|CBC|CFB|OFB|CTR)', re.IGNORECASE)
-        ke_pattern = re.compile(r'Encrypting?\s+(\d+)\s+(?:octet|byte)s', re.IGNORECASE)
+        # Pattern to match test vector sections - handle both "is" and "=" formats
+        key_pattern = re.compile(r'Key\s+is\s+([A-Fa-f0-9\s\n]+?)(?=(?:IV|Plaintext|Ciphertext|Key)\s+(?:is|=)|\n\n|$)', re.MULTILINE)
+        iv_pattern = re.compile(r'IV\s+is\s+([A-Fa-f0-9\s\n]+?)(?=(?:Plaintext|Ciphertext|Key)\s+(?:is|=)|\n\n|$)', re.MULTILINE)
+        pt_pattern = re.compile(r'Plaintext\s+is\s+([A-Fa-f0-9\s\n]+?)(?=(?:Ciphertext|Key)\s+(?:is|=)|\n\n|$)', re.MULTILINE)
+        ct_pattern = re.compile(r'Ciphertext\s+is\s+([A-Fa-f0-9\s\n]+?)(?=(?:Key)\s+(?:is|=)|ECB|CBC|CFB|OFB|CTR|\n\n|$)', re.MULTILINE)
         
-        # Split by appendix/section markers
-        sections = re.split(r'(?:APPENDIX|SECTION|===)', text, flags=re.IGNORECASE)
+        # Pattern to identify test mode (e.g., "ECB-AES128 (Encryption)" or "CBC-AES256 (Decryption)")
+        test_block_pattern = re.compile(r'(ECB|CBC|CFB|OFB|CTR)(?:-AES)?[\s\(]*(\d+)?[^\n]*\n', re.IGNORECASE)
         
-        for section in sections:
-            lines = section.split('\n')
-            
-            # Try to identify mode from section
-            mode_match = mode_pattern.search(section[:200])
+        # Split by dashed lines to find test blocks
+        blocks = re.split(r'-{50,}', text)
+        
+        for block in blocks:
+            # Find the mode in this block
+            mode_match = test_block_pattern.search(block)
             if not mode_match:
                 continue
             
             mode = mode_match.group(1).upper()
             
-            # Look for test vectors in this section
-            key_matches = key_pattern.findall(section)
-            iv_matches = iv_pattern.findall(section)
-            pt_matches = pt_pattern.findall(section)
-            ct_matches = ct_pattern.findall(section)
+            # Extract hex values from this block
+            def extract_hex_value(pattern, section):
+                """Extract and clean hex value from pattern match"""
+                match = pattern.search(section)
+                if match:
+                    # Clean: remove whitespace, convert to lowercase
+                    hex_str = match.group(1)
+                    hex_str = re.sub(r'\s+', '', hex_str.lower())
+                    # Only keep valid hex characters
+                    hex_str = re.sub(r'[^a-f0-9]', '', hex_str)
+                    return hex_str if hex_str else None
+                return None
             
-            # Clean hex strings
-            def clean_hex(s):
-                return re.sub(r'\s+', '', s.lower()) if s else ''
+            # Extract vectors from this block
+            key = extract_hex_value(key_pattern, block)
+            iv = extract_hex_value(iv_pattern, block)
+            plaintext = extract_hex_value(pt_pattern, block)
+            ciphertext = extract_hex_value(ct_pattern, block)
             
-            for i, key in enumerate(key_matches[:3]):  # Limit to 3 per mode
-                key_hex = clean_hex(key)
-                if not key_hex:
-                    continue
+            # Only add if we have key, plaintext, and ciphertext
+            if key and plaintext and ciphertext and len(plaintext) == len(ciphertext):
+                if mode not in vectors:
+                    vectors[mode] = []
                 
-                iv_hex = clean_hex(iv_matches[i]) if i < len(iv_matches) else ''
-                pt_hex = clean_hex(pt_matches[i]) if i < len(pt_matches) else ''
-                ct_hex = clean_hex(ct_matches[i]) if i < len(ct_matches) else ''
-                
-                if pt_hex and ct_hex:
-                    if mode not in vectors:
-                        vectors[mode] = []
-                    
-                    vectors[mode].append({
-                        'key': key_hex,
-                        'iv': iv_hex if iv_hex else None,
-                        'plaintext': pt_hex,
-                        'ciphertext': ct_hex,
-                        'key_len': len(key_hex) * 4  # bits
-                    })
+                vectors[mode].append({
+                    'key': key,
+                    'iv': iv,
+                    'plaintext': plaintext,
+                    'ciphertext': ciphertext,
+                    'key_len': len(key) * 4  # bits
+                })
         
         return vectors
     
