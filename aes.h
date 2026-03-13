@@ -1,11 +1,11 @@
 #pragma once
 
-#include <stdint.h>
 #include <stddef.h>
-#include <string.h>
+#include <stdint.h>
 
 #define AES_BLOCK_SIZE 16u
-#define AES_MAX_ROUND_KEY_WORDS 60u // Maximum number of round-key words: Nr_max + 1 = 15 rounds * 4 words.
+/* Nr_max + 1 = 15 round keys, each with 4 words. */
+#define AES_MAX_ROUND_KEY_WORDS 60u
 
 #define AES_KEY128 16u
 #define AES_KEY192 24u
@@ -17,30 +17,29 @@ typedef enum : uint8_t {
     AES_KEYLEN_256 = AES_KEY256,
 } AesKeyLen;
 
-// Expanded key schedule. 
 typedef struct {
-    uint32_t roundKey[AES_MAX_ROUND_KEY_WORDS]; // round-key words after KeyExpansion 
-    uint8_t numRounds; // number of rounds: 10 / 12 / 14    
+    uint32_t round_key[AES_MAX_ROUND_KEY_WORDS];
+    uint8_t round_count;
 } AesCtx;
 
-// Initialise context from a raw key of length "keylen". Returns 0 on success, -1 if keylen is invalid.                          
+/* Returns 0 on success, -1 on invalid key length. */
 int aes_init(AesCtx *ctx, const uint8_t *key, AesKeyLen keylen);
 
-// Encrypt / decrypt / clear a single 128-bit block.         
-void aes_encrypt_block(const AesCtx *ctx, uint8_t out[AES_BLOCK_SIZE], const uint8_t in [AES_BLOCK_SIZE]);
-void aes_decrypt_block(const AesCtx *ctx, uint8_t out[AES_BLOCK_SIZE], const uint8_t in [AES_BLOCK_SIZE]);
+/* Single-block AES (16 bytes). In-place operation is supported. */
+void aes_encrypt_block(const AesCtx *ctx, uint8_t out[AES_BLOCK_SIZE], const uint8_t in[AES_BLOCK_SIZE]);
+void aes_decrypt_block(const AesCtx *ctx, uint8_t out[AES_BLOCK_SIZE], const uint8_t in[AES_BLOCK_SIZE]);
 
-// ECB mode: "len" must be a multiple of AES_BLOCK_SIZE. 
+/* 'len' must be a multiple of AES_BLOCK_SIZE. */
 int aes_ecb_encrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len);
 int aes_ecb_decrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len);
 
-// CBC mode: "len" must be a multiple of AES_BLOCK_SIZE. "iv" is the initial IV for the operation and is not modified.
+/* 'len' must be a multiple of AES_BLOCK_SIZE. */
 int aes_cbc_encrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len, const uint8_t iv[AES_BLOCK_SIZE]);
 int aes_cbc_decrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len, const uint8_t iv[AES_BLOCK_SIZE]);
 
-// CFB128 mode: "len" may be any value >= 0. "iv" is the initial shift-register value and is not modified.
+/* 'len' may be any value. */
 int aes_cfb128_encrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len, const uint8_t iv[AES_BLOCK_SIZE]);
 int aes_cfb128_decrypt(const AesCtx *ctx, uint8_t *out, const uint8_t *in, size_t len, const uint8_t iv[AES_BLOCK_SIZE]);
 
-// clear the context
+/* Clears expanded key material from memory. */
 void aes_clear(AesCtx *ctx);

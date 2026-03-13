@@ -6,20 +6,16 @@
 
 #define TV_LEN 64u
 
-static bool bytes_eq(const uint8_t *a, const uint8_t *b, size_t n)
+static bool bytes_eq(const uint8_t *lhs, const uint8_t *rhs, size_t len)
 {
     uint8_t diff = 0;
-    for (size_t i = 0; i < n; ++i) {
-        diff |= (uint8_t)(a[i] ^ b[i]);
+    for (size_t idx = 0; idx < len; ++idx) {
+        diff |= (uint8_t)(lhs[idx] ^ rhs[idx]);
     }
     return diff == 0;
 }
 
-static int run_ecb_test(const char *name,
-                        AesKeyLen keylen,
-                        const uint8_t *key,
-                        const uint8_t *pt,
-                        const uint8_t *ct)
+static int run_ecb_test(const char *name, AesKeyLen keylen, const uint8_t *key, const uint8_t *plaintext, const uint8_t *ciphertext)
 {
     AesCtx ctx;
     if (aes_init(&ctx, key, keylen) != 0) {
@@ -28,37 +24,32 @@ static int run_ecb_test(const char *name,
     }
 
     uint8_t out[TV_LEN];
-    uint8_t rec[TV_LEN];
+    uint8_t recovered[TV_LEN];
 
-    if (aes_ecb_encrypt(&ctx, out, pt, TV_LEN) != 0) {
+    if (aes_ecb_encrypt(&ctx, out, plaintext, TV_LEN) != 0) {
         printf("%s: encrypt returned error\n", name);
         aes_clear(&ctx);
         return 1;
     }
-    if (aes_ecb_decrypt(&ctx, rec, ct, TV_LEN) != 0) {
+    if (aes_ecb_decrypt(&ctx, recovered, ciphertext, TV_LEN) != 0) {
         printf("%s: decrypt returned error\n", name);
         aes_clear(&ctx);
         return 1;
     }
 
-    bool enc_ok = bytes_eq(out, ct, TV_LEN);
-    bool dec_ok = bytes_eq(rec, pt, TV_LEN);
+    bool encrypt_ok = bytes_eq(out, ciphertext, TV_LEN);
+    bool decrypt_ok = bytes_eq(recovered, plaintext, TV_LEN);
 
     printf("%-12s encrypt=%s decrypt=%s\n",
            name,
-           enc_ok ? "PASS" : "FAIL",
-           dec_ok ? "PASS" : "FAIL");
+            encrypt_ok ? "PASS" : "FAIL",
+            decrypt_ok ? "PASS" : "FAIL");
 
     aes_clear(&ctx);
-    return (enc_ok && dec_ok) ? 0 : 1;
+        return (encrypt_ok && decrypt_ok) ? 0 : 1;
 }
 
-static int run_cbc_test(const char *name,
-                        AesKeyLen keylen,
-                        const uint8_t *key,
-                        const uint8_t iv[AES_BLOCK_SIZE],
-                        const uint8_t *pt,
-                        const uint8_t *ct)
+static int run_cbc_test(const char *name, AesKeyLen keylen, const uint8_t *key, const uint8_t iv[AES_BLOCK_SIZE], const uint8_t *plaintext, const uint8_t *ciphertext)
 {
     AesCtx ctx;
     if (aes_init(&ctx, key, keylen) != 0) {
@@ -67,37 +58,32 @@ static int run_cbc_test(const char *name,
     }
 
     uint8_t out[TV_LEN];
-    uint8_t rec[TV_LEN];
+    uint8_t recovered[TV_LEN];
 
-    if (aes_cbc_encrypt(&ctx, out, pt, TV_LEN, iv) != 0) {
+    if (aes_cbc_encrypt(&ctx, out, plaintext, TV_LEN, iv) != 0) {
         printf("%s: encrypt returned error\n", name);
         aes_clear(&ctx);
         return 1;
     }
-    if (aes_cbc_decrypt(&ctx, rec, ct, TV_LEN, iv) != 0) {
+    if (aes_cbc_decrypt(&ctx, recovered, ciphertext, TV_LEN, iv) != 0) {
         printf("%s: decrypt returned error\n", name);
         aes_clear(&ctx);
         return 1;
     }
 
-    bool enc_ok = bytes_eq(out, ct, TV_LEN);
-    bool dec_ok = bytes_eq(rec, pt, TV_LEN);
+    bool encrypt_ok = bytes_eq(out, ciphertext, TV_LEN);
+    bool decrypt_ok = bytes_eq(recovered, plaintext, TV_LEN);
 
     printf("%-12s encrypt=%s decrypt=%s\n",
            name,
-           enc_ok ? "PASS" : "FAIL",
-           dec_ok ? "PASS" : "FAIL");
+            encrypt_ok ? "PASS" : "FAIL",
+            decrypt_ok ? "PASS" : "FAIL");
 
     aes_clear(&ctx);
-    return (enc_ok && dec_ok) ? 0 : 1;
+        return (encrypt_ok && decrypt_ok) ? 0 : 1;
 }
 
-static int run_cfb128_test(const char *name,
-                           AesKeyLen keylen,
-                           const uint8_t *key,
-                           const uint8_t iv[AES_BLOCK_SIZE],
-                           const uint8_t *pt,
-                           const uint8_t *ct)
+static int run_cfb128_test(const char *name, AesKeyLen keylen, const uint8_t *key, const uint8_t iv[AES_BLOCK_SIZE], const uint8_t *plaintext, const uint8_t *ciphertext)
 {
     AesCtx ctx;
     if (aes_init(&ctx, key, keylen) != 0) {
@@ -106,29 +92,29 @@ static int run_cfb128_test(const char *name,
     }
 
     uint8_t out[TV_LEN];
-    uint8_t rec[TV_LEN];
+    uint8_t recovered[TV_LEN];
 
-    if (aes_cfb128_encrypt(&ctx, out, pt, TV_LEN, iv) != 0) {
+    if (aes_cfb128_encrypt(&ctx, out, plaintext, TV_LEN, iv) != 0) {
         printf("%s: encrypt returned error\n", name);
         aes_clear(&ctx);
         return 1;
     }
-    if (aes_cfb128_decrypt(&ctx, rec, ct, TV_LEN, iv) != 0) {
+    if (aes_cfb128_decrypt(&ctx, recovered, ciphertext, TV_LEN, iv) != 0) {
         printf("%s: decrypt returned error\n", name);
         aes_clear(&ctx);
         return 1;
     }
 
-    bool enc_ok = bytes_eq(out, ct, TV_LEN);
-    bool dec_ok = bytes_eq(rec, pt, TV_LEN);
+    bool encrypt_ok = bytes_eq(out, ciphertext, TV_LEN);
+    bool decrypt_ok = bytes_eq(recovered, plaintext, TV_LEN);
 
     printf("%-12s encrypt=%s decrypt=%s\n",
            name,
-           enc_ok ? "PASS" : "FAIL",
-           dec_ok ? "PASS" : "FAIL");
+            encrypt_ok ? "PASS" : "FAIL",
+            decrypt_ok ? "PASS" : "FAIL");
 
     aes_clear(&ctx);
-    return (enc_ok && dec_ok) ? 0 : 1;
+        return (encrypt_ok && decrypt_ok) ? 0 : 1;
 }
 
 int main(void)
@@ -150,7 +136,7 @@ int main(void)
         0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f
     };
 
-    static const uint8_t pt[TV_LEN] = {
+    static const uint8_t plaintext[TV_LEN] = {
         0x6b,0xc1,0xbe,0xe2,0x2e,0x40,0x9f,0x96,0xe9,0x3d,0x7e,0x11,0x73,0x93,0x17,0x2a,
         0xae,0x2d,0x8a,0x57,0x1e,0x03,0xac,0x9c,0x9e,0xb7,0x6f,0xac,0x45,0xaf,0x8e,0x51,
         0x30,0xc8,0x1c,0x46,0xa3,0x5c,0xe4,0x11,0xe5,0xfb,0xc1,0x19,0x1a,0x0a,0x52,0xef,
@@ -217,17 +203,17 @@ int main(void)
     int failures = 0;
 
     puts("NIST AES mode vectors (ECB/CBC/CFB128)");
-    failures += run_ecb_test("ECB-128", AES_KEYLEN_128, key128, pt, ecb128);
-    failures += run_ecb_test("ECB-192", AES_KEYLEN_192, key192, pt, ecb192);
-    failures += run_ecb_test("ECB-256", AES_KEYLEN_256, key256, pt, ecb256);
+    failures += run_ecb_test("ECB-128", AES_KEYLEN_128, key128, plaintext, ecb128);
+    failures += run_ecb_test("ECB-192", AES_KEYLEN_192, key192, plaintext, ecb192);
+    failures += run_ecb_test("ECB-256", AES_KEYLEN_256, key256, plaintext, ecb256);
 
-    failures += run_cbc_test("CBC-128", AES_KEYLEN_128, key128, iv, pt, cbc128);
-    failures += run_cbc_test("CBC-192", AES_KEYLEN_192, key192, iv, pt, cbc192);
-    failures += run_cbc_test("CBC-256", AES_KEYLEN_256, key256, iv, pt, cbc256);
+    failures += run_cbc_test("CBC-128", AES_KEYLEN_128, key128, iv, plaintext, cbc128);
+    failures += run_cbc_test("CBC-192", AES_KEYLEN_192, key192, iv, plaintext, cbc192);
+    failures += run_cbc_test("CBC-256", AES_KEYLEN_256, key256, iv, plaintext, cbc256);
 
-    failures += run_cfb128_test("CFB-128", AES_KEYLEN_128, key128, iv, pt, cfb128_128);
-    failures += run_cfb128_test("CFB-192", AES_KEYLEN_192, key192, iv, pt, cfb128_192);
-    failures += run_cfb128_test("CFB-256", AES_KEYLEN_256, key256, iv, pt, cfb128_256);
+    failures += run_cfb128_test("CFB-128", AES_KEYLEN_128, key128, iv, plaintext, cfb128_128);
+    failures += run_cfb128_test("CFB-192", AES_KEYLEN_192, key192, iv, plaintext, cfb128_192);
+    failures += run_cfb128_test("CFB-256", AES_KEYLEN_256, key256, iv, plaintext, cfb128_256);
 
     if (failures == 0) {
         puts("All vectors: PASS");

@@ -1,6 +1,6 @@
 #include "rng.h"
 
-// Windows - BCryptGenRandom
+/* Windows: BCryptGenRandom */
 #if defined(_WIN32)
 
 #define WIN32_LEAN_AND_MEAN
@@ -10,18 +10,19 @@
 
 int rng_fill(void *buf, size_t len)
 {
-    uint8_t *p = buf;
+    uint8_t *out_ptr = buf;
     while (len > 0) {
-        ULONG chunk = (len > 0xffffffffu) ? 0xffffffffu : (ULONG)len;
-        if (!BCRYPT_SUCCESS(BCryptGenRandom(nullptr, p, chunk, BCRYPT_USE_SYSTEM_PREFERRED_RNG)))
+        ULONG chunk_len = (len > 0xffffffffu) ? 0xffffffffu : (ULONG)len;
+        if (!BCRYPT_SUCCESS(BCryptGenRandom(nullptr, out_ptr, chunk_len, BCRYPT_USE_SYSTEM_PREFERRED_RNG))) {
             return -1;
-        p += chunk;
-        len -= chunk;
+        }
+        out_ptr += chunk_len;
+        len -= chunk_len;
     }
     return 0;
 }
 
-// Linux - getrandom
+/* Linux: getrandom */
 #elif defined(__linux__)
 
 #include <sys/random.h>
@@ -29,45 +30,41 @@ int rng_fill(void *buf, size_t len)
 
 int rng_fill(void *buf, size_t len)
 {
-    uint8_t *p = buf;
+    uint8_t *out_ptr = buf;
     while (len > 0) {
-        size_t chunk = (len > 256u) ? 256u : len; // limited to 256 to match documented behavior
-        ssize_t n;
+        size_t chunk_len = (len > 256u) ? 256u : len;
+        ssize_t read_len;
         do {
-            n = getrandom(p, chunk, 0);
-        } while (n == -1 && errno == EINTR);
-        if (n <= 0) return -1;
-        p += (size_t)n;
-        len -= (size_t)n;
+            read_len = getrandom(out_ptr, chunk_len, 0);
+        } while (read_len == -1 && errno == EINTR);
+        if (read_len <= 0) {
+            return -1;
+        }
+        out_ptr += (size_t)read_len;
+        len -= (size_t)read_len;
     }
     return 0;
 }
 
-// macOS / FreeBSD / OpenBSD - getentropy
+/* macOS / FreeBSD / OpenBSD: getentropy */
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 
 #include <unistd.h> 
 
 int rng_fill(void *buf, size_t len)
 {
-    uint8_t *p = buf;
+    uint8_t *out_ptr = buf;
     while (len > 0) {
-        size_t chunk = (len > 256u) ? 256u : len; // limited to 256 to match documented behavior
-        if (getentropy(p, chunk) != 0) return -1;
-        p += chunk;
-        len -= chunk;
+        size_t chunk_len = (len > 256u) ? 256u : len;
+        if (getentropy(out_ptr, chunk_len) != 0) {
+            return -1;
+        }
+        out_ptr += chunk_len;
+        len -= chunk_len;
     }
     return 0;
 }
 
 #else
-#warning "Unsupported platform: no secure RNG backend available. Using rand() as fallback, but this is not secure."
-int rng_fill(void *buf, size_t len)
-{
-    uint8_t *p = buf;
-    for (size_t i = 0; i < len; i++) {
-        p[i] = (uint8_t)(rand() & 0xff);
-    }
-    return 0;
-}
+#error "Unsupported platform: no secure RNG backend available."
 #endif
