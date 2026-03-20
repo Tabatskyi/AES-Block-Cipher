@@ -79,27 +79,32 @@ else()
     set(VENV_PIP "${VENV_DIR}/bin/pip")
 endif()
 
-# Create custom target to setup virtual environment
-add_custom_target(
-    setup_venv ALL
+# Create custom command to setup virtual environment only when requirements change
+add_custom_command(
+    OUTPUT ${VENV_DIR}/setup_done.txt
     COMMAND ${Python3_EXECUTABLE} -m venv ${VENV_DIR}
     COMMAND ${VENV_PIP} install -r ${CMAKE_CURRENT_SOURCE_DIR}/test/requirements.txt
+    COMMAND ${CMAKE_COMMAND} -E touch ${VENV_DIR}/setup_done.txt
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/requirements.txt
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Setting up Python virtual environment with dependencies..."
 )
+add_custom_target(setup_venv ALL DEPENDS ${VENV_DIR}/setup_done.txt)
 
-# Ensure the C library is built before tests
-add_dependencies(setup_venv ${PROJECT_NAME})
 set(PDF_PATHS "test/AES_ECB.pdf" "test/AES_CBC.pdf" "test/AES_CFB.pdf")
-add_test(
-    NAME Export_Vectors_C_Header
+
+# Generate nist_vectors.h at build time
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/nist_vectors.h
     COMMAND ${VENV_PYTHON} test/export_vectors.py --format c --pdf ${PDF_PATHS}
+    DEPENDS setup_venv test/export_vectors.py ${PDF_PATHS}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Generating nist_vectors.h..."
 )
-set_tests_properties(Export_Vectors_C_Header PROPERTIES
-    TIMEOUT 30
-    DEPENDS "setup_venv"
-)
+
+# Create a target for the generation so the executable can depend on it
+add_custom_target(generate_nist_vectors DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/nist_vectors.h)
+add_dependencies(${PROJECT_NAME} generate_nist_vectors)
 
 # Test 1: C library test (via direct execution)
 add_test(
@@ -110,7 +115,6 @@ add_test(
 
 set_tests_properties(C_AES_Implementation PROPERTIES
     TIMEOUT 10
-    DEPENDS "Export_Vectors_C_Header"
 )
 
 # Python tests depend on venv setup
@@ -121,11 +125,6 @@ add_test(
 )
 
 set_tests_properties(AES_NIST_Vectors_PDF PROPERTIES
-    TIMEOUT 30
-    DEPENDS "Export_Vectors_C_Header"
-)
-
-set_tests_properties(Export_Vectors_C_Header PROPERTIES
     TIMEOUT 30
     DEPENDS "setup_venv"
 )
