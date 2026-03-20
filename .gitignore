@@ -22,3 +22,8 @@ cmake-build-*/
 
 *.pyc
 nist_vectors.*
+*.so
+*.o
+*.a
+*.dll
+*.exe
