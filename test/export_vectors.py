@@ -71,6 +71,7 @@ def export_c_header(vectors, output_path):
         "#include <stdint.h>",
         "",
         "typedef struct {",
+        "    const char *mode;",
         "    const char *key;",
         "    const char *iv;",
         "    const char *plaintext;",
@@ -86,6 +87,7 @@ def export_c_header(vectors, output_path):
             iv = f'"{vec.get("iv")}"' if vec.get("iv") else "NULL"
             lines += [
                 f"static const TestVector {name} = {{",
+                f'    .mode = "{mode}",',
                 f'    .key = "{vec["key"]}",',
                 f"    .iv = {iv},",
                 f'    .plaintext = "{vec["plaintext"]}",',
@@ -95,6 +97,17 @@ def export_c_header(vectors, output_path):
                 "",
             ]
             total += 1
+            
+    # Add an array of pointers to all test vectors for easy iteration
+    lines.append("static const TestVector* const nist_test_vectors[] = {")
+    for mode, mode_vectors in sorted(vectors.items()):
+        for i, vec in enumerate(mode_vectors, 1):
+            name = f"{mode.lower()}_vector_{vec['key_len']}_{i}"
+            lines.append(f"    &{name},")
+    lines.append("};")
+    lines.append(f"static const int num_nist_test_vectors = {total};")
+    lines.append("")
+    
     output_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"Exported {output_path.stat().st_size} bytes ({total} vectors)")
     print(output_path.name)
@@ -104,7 +117,7 @@ def main():
     p = argparse.ArgumentParser(description="Export NIST AES Test Vectors")
     p.add_argument("--output", "-o", default="nist_vectors", help="Output file path stem")
     p.add_argument("--format", "-f", action="append", choices=["json", "csv", "c"], default=None)
-    p.add_argument("--pdf", required=True, help="Path or URL to NIST AES_ModesA_All.pdf")
+    p.add_argument("--pdf", required=True, nargs="+", help="Paths to NIST PDF files")
     p.add_argument("--validate-only", action="store_true")
     a = p.parse_args()
     formats = a.format or ["json"]
@@ -113,20 +126,30 @@ def main():
     print("\n" + "=" * 60)
     print("NIST AES Vector Export Utility")
     print("=" * 60)
-    print(f"\nAttempting to parse PDF: {a.pdf}")
+    
+    all_vectors = {}
+    
     try:
         sys.path.insert(0, str(Path.cwd()))
         from parse_nist_pdf import NISTAESPDFParser
 
-        vectors = NISTAESPDFParser(a.pdf).parse()
+        for pdf_path in a.pdf:
+            print(f"\nAttempting to parse PDF: {pdf_path}")
+            vectors = NISTAESPDFParser(pdf_path).parse()
+            if vectors:
+                for mode, vecs in vectors.items():
+                    all_vectors.setdefault(mode, []).extend(vecs)
+                    
     except Exception as e:
         print(f"PDF parsing failed: {e}")
         return 1
-    if not vectors:
-        print("No vectors found in PDF")
+        
+    if not all_vectors:
+        print("No vectors found in any PDF")
         return 1
-    print(f"Successfully parsed PDF\nFound {sum(len(v) for v in vectors.values())} vectors")
-    if not validate_vectors(vectors):
+        
+    print(f"Successfully parsed PDFs\nFound {sum(len(v) for v in all_vectors.values())} total vectors")
+    if not validate_vectors(all_vectors):
         return 1
     if a.validate_only:
         print("\nValidation complete")
@@ -137,11 +160,11 @@ def main():
     print(f"\nExporting in formats: {', '.join(sorted(set(formats)))}")
     for fmt in set(formats):
         if fmt == "json":
-            export_json(vectors, parent / f"{name}.json")
+            export_json(all_vectors, parent / f"{name}.json")
         elif fmt == "csv":
-            export_csv(vectors, parent / f"{name}.csv")
+            export_csv(all_vectors, parent / f"{name}.csv")
         else:
-            export_c_header(vectors, parent / f"{name}.h")
+            export_c_header(all_vectors, parent / f"{name}.h")
     print("\nExport complete")
     return 0
 

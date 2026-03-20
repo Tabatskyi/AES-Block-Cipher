@@ -1,136 +1,86 @@
 import importlib
 import io
-import json
 import re
 import sys
+import json
 from pathlib import Path
-from urllib.request import urlopen
-
 
 def _opt_import(name, note=None):
     try:
         return importlib.import_module(name)
     except ImportError:
-        if note:
-            print(note)
         return None
 
-
-pdfplumber = _opt_import("pdfplumber", "Note: pdfplumber not installed. Install with: pip install pdfplumber")
-PyPDF2 = _opt_import("PyPDF2")
-fitz = _opt_import("fitz")
-
+pdfplumber = _opt_import("pdfplumber")
 
 class NISTAESPDFParser:
     def __init__(self, pdf_source):
         self.pdf_source = pdf_source
-        self.pdf_bytes = self._load_pdf()
+        self.pdf_bytes = Path(self.pdf_source).read_bytes()
 
-    def _load_pdf(self):
-        if self.pdf_source.startswith(("http://", "https://")):
-            print(f"Downloading PDF from {self.pdf_source}...")
-            with urlopen(self.pdf_source) as r:
-                return r.read()
-        print(f"Loading PDF from {self.pdf_source}...")
-        return Path(self.pdf_source).read_bytes()
-
-    @staticmethod
-    def _extract(pattern, text):
-        m = pattern.search(text)
-        if not m:
-            return None
-        s = re.sub(r"[^a-f0-9]", "", re.sub(r"\s+", "", m.group(1).lower()))
-        return s or None
-
-    def _parse_vector_text(self, text):
+    def _parse_text(self, text):
         vectors = {}
-        pats = {
-            "key": re.compile(r"Key\s+is\s+([A-Fa-f0-9\s\n]+?)(?=(?:IV|Plaintext|Ciphertext|Key)\s+(?:is|=)|\n\n|$)", re.MULTILINE),
-            "iv": re.compile(r"IV\s+is\s+([A-Fa-f0-9\s\n]+?)(?=(?:Plaintext|Ciphertext|Key)\s+(?:is|=)|\n\n|$)", re.MULTILINE),
-            "plaintext": re.compile(r"Plaintext\s+is\s+([A-Fa-f0-9\s\n]+?)(?=(?:Ciphertext|Key)\s+(?:is|=)|\n\n|$)", re.MULTILINE),
-            "ciphertext": re.compile(r"Ciphertext\s+is\s+([A-Fa-f0-9\s\n]+?)(?=(?:Key)\s+(?:is|=)|ECB|CBC|CFB|OFB|CTR|\n\n|$)", re.MULTILINE),
-        }
-        mode_pat = re.compile(r"(ECB|CBC|CFB|OFB|CTR)(?:-AES)?[\s\(]*(\d+)?[^\n]*\n", re.IGNORECASE)
-        for block in re.split(r"-{50,}", text):
-            mm = mode_pat.search(block)
-            if not mm:
+        mode_regex = re.compile(r"(ECB|CBC|CFB|OFB|CTR)-AES(\d+)\s*\(Encryption\)", re.IGNORECASE)
+        sections = mode_regex.split(text)
+        
+        def clean_hex(s):
+            return re.sub(r"[^A-Fa-f0-9]", "", s).lower()
+            
+        global_iv = None
+        iv_match = re.search(r"IV is\s+([A-Fa-f0-9\s]+?)(?:Plaintext is|Key is|={5,})", text, re.IGNORECASE)
+        if iv_match:
+            global_iv = clean_hex(iv_match.group(1))
+
+        if len(sections) < 4:
+            return vectors
+            
+        for i in range(1, len(sections), 3):
+            mode = sections[i].upper()
+            if mode == 'CFB':
+                mode = 'CFB128'
+            key_len = int(sections[i+1])
+            content = sections[i+2]
+            
+            content = re.split(r"\(Decryption\)", content)[0]
+            
+            # Skip non-128 segment lengths for CFB
+            if "Segment Length =" in content and "Segment Length = 128" not in content:
                 continue
-            mode = mm.group(1).upper()
-            vec = {k: self._extract(p, block) for k, p in pats.items()}
-            if vec["key"] and vec["plaintext"] and vec["ciphertext"] and len(vec["plaintext"]) == len(vec["ciphertext"]):
-                vec["key_len"] = len(vec["key"]) * 4
+
+            key_match = re.search(r"Key is\s+([A-Fa-f0-9\s]+?)(?:IV is|Plaintext is|Ciphertext is)", content, re.IGNORECASE)
+            key_hex = clean_hex(key_match.group(1)) if key_match else ""
+            
+            iv_local_match = re.search(r"IV is\s+([A-Fa-f0-9\s]+?)(?:Plaintext is|Key is|Ciphertext is)", content, re.IGNORECASE)
+            iv_hex = clean_hex(iv_local_match.group(1)) if iv_local_match else global_iv
+            
+            pt_match = re.search(r"Plaintext is\s+([A-Fa-f0-9\s]+?)(?:Ciphertext is|Block #1|Segment Length)", content, re.IGNORECASE)
+            pt_hex = clean_hex(pt_match.group(1)) if pt_match else ""
+            
+            ct_match = re.search(r"Ciphertext is\s+([A-Fa-f0-9\s]+?)(?:={5,}|-|\Z)", content, re.IGNORECASE)
+            ct_hex = clean_hex(ct_match.group(1)) if ct_match else ""
+            
+            if key_hex and pt_hex and ct_hex:
+                vec = {
+                    "mode": mode,
+                    "key": key_hex,
+                    "iv": iv_hex,
+                    "plaintext": pt_hex,
+                    "ciphertext": ct_hex,
+                    "key_len": key_len
+                }
                 vectors.setdefault(mode, []).append(vec)
+                
         return vectors
 
-    def parse_with_pdfplumber(self):
-        if not pdfplumber:
-            raise ImportError("pdfplumber not available. Install: pip install pdfplumber")
-        with pdfplumber.open(io.BytesIO(self.pdf_bytes)) as pdf:
-            print(f"PDF has {len(pdf.pages)} pages")
-            text = "".join(f"\n--- Page {i + 1} ---\n{p.extract_text() or ''}" for i, p in enumerate(pdf.pages))
-        return self._parse_vector_text(text)
-
-    def parse_with_pypdf2(self):
-        if not PyPDF2:
-            raise ImportError("PyPDF2 not available. Install: pip install PyPDF2")
-        reader = PyPDF2.PdfReader(io.BytesIO(self.pdf_bytes))
-        print(f"PDF has {len(reader.pages)} pages")
-        text = "".join(f"\n--- Page {i + 1} ---\n{p.extract_text() or ''}" for i, p in enumerate(reader.pages))
-        return self._parse_vector_text(text)
-
-    def parse_with_fitz(self):
-        if not fitz:
-            raise ImportError("PyMuPDF not available. Install: pip install PyMuPDF")
-        doc = fitz.open(stream=self.pdf_bytes, filetype="pdf")
-        print(f"PDF has {len(doc)} pages")
-        text = "".join(f"\n--- Page {i + 1} ---\n{doc[i].get_text()}" for i in range(len(doc)))
-        return self._parse_vector_text(text)
-
     def parse(self):
-        if pdfplumber:
-            return self.parse_with_pdfplumber()
-        if fitz:
-            return self.parse_with_fitz()
-        if PyPDF2:
-            return self.parse_with_pypdf2()
-        raise ImportError(
-            "No PDF parsing library available.\n"
-            "Install one of: pdfplumber, PyMuPDF, PyPDF2\n"
-            "  pip install pdfplumber\n"
-            "  pip install PyMuPDF\n"
-            "  pip install PyPDF2"
-        )
-
+        with pdfplumber.open(io.BytesIO(self.pdf_bytes)) as pdf:
+            text = "".join(f"\n{p.extract_text() or ''}" for p in pdf.pages)
+        return self._parse_text(text)
 
 def main():
-    src = sys.argv[1] if len(sys.argv) > 1 else "https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Standards-and-Guidelines/documents/examples/AES_ModesA_All.pdf"
-    try:
-        vectors = NISTAESPDFParser(src).parse()
-        print("\n" + "=" * 60)
-        print("Extracted Test Vectors by Mode")
-        print("=" * 60)
-        total = 0
-        for mode in sorted(vectors):
-            print(f"\n{mode}:")
-            for i, v in enumerate(vectors[mode], 1):
-                print(f"  [{i}] {v['key_len']:3d}-bit key")
-                print(f"      Key:  {v['key'][:32]}..." if len(v["key"]) > 32 else f"      Key:  {v['key']}")
-                if v["iv"]:
-                    print(f"      IV:   {v['iv']}")
-                pt = v["plaintext"][:40] + "..." if len(v["plaintext"]) > 40 else v["plaintext"]
-                ct = v["ciphertext"][:40] + "..." if len(v["ciphertext"]) > 40 else v["ciphertext"]
-                print(f"      PT:   {pt}")
-                print(f"      CT:   {ct}")
-                total += 1
-        print(f"\nTotal vectors extracted: {total}")
-        out = Path(__file__).parent / "nist_vectors.json"
-        with out.open("w", encoding="utf-8") as f:
-            json.dump(vectors, f, indent=2)
-        print(f"\nVectors exported to: {out}")
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+    src = sys.argv[1] if len(sys.argv) > 1 else "test/AES_ECB.pdf"
+    vectors = NISTAESPDFParser(src).parse()
+    print(json.dumps(vectors, indent=2))
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

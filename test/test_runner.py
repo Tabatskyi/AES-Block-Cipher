@@ -16,7 +16,7 @@ class TestRunner:
             raise ValueError("PDF path is required. Specify with --pdf-path")
         self.workspace = workspace_root
         self.bin_path = workspace_root / "build" / "AES_Block_Cipher.exe"
-        self.pdf_path = pdf_path
+        self.pdf_paths = pdf_path if isinstance(pdf_path, list) else [pdf_path]
         self.verbose = verbose
         self.vectors = {}
 
@@ -24,16 +24,22 @@ class TestRunner:
         print("\n" + "=" * 70)
         print("VECTOR LOADING PHASE")
         print("=" * 70)
-        print(f"\n[+] Parsing NIST PDF: {self.pdf_path}")
+        
         try:
             sys.path.insert(0, str(self.workspace / "test"))
             from parse_nist_pdf import NISTAESPDFParser
 
-            self.vectors = NISTAESPDFParser(self.pdf_path).parse() or {}
+            for pdf_path in self.pdf_paths:
+                print(f"\n[+] Parsing NIST PDF: {pdf_path}")
+                parsed_vectors = NISTAESPDFParser(pdf_path).parse() or {}
+                for mode, vecs in parsed_vectors.items():
+                    self.vectors.setdefault(mode, []).extend(vecs)
+                    
             if not self.vectors:
-                print("[-] No vectors found in PDF")
+                print("[-] No vectors found in PDFs")
                 return False
-            print("[+] Successfully parsed PDF")
+                
+            print("\n[+] Successfully parsed PDFs")
             print(f"    Found {sum(len(v) for v in self.vectors.values())} vectors across modes")
             return True
         except Exception as e:
@@ -113,7 +119,7 @@ class TestRunner:
 
 def main():
     p = argparse.ArgumentParser(description="NIST AES Test Suite with PDF Vector Parsing")
-    p.add_argument("--pdf-path", required=True, help="Path or URL to NIST AES_ModesA_All.pdf")
+    p.add_argument("--pdf-path", required=True, nargs="+", help="Paths to NIST PDFs")
     p.add_argument("--verbose", "-v", action="store_true", help="Show detailed test output")
     a = p.parse_args()
     return TestRunner(Path(__file__).parent.parent, a.pdf_path, a.verbose).run()

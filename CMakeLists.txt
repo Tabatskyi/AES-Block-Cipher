@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(AES_Block_Cipher
-    VERSION 0.0.1
+    VERSION 1.0.0
     LANGUAGES C
 )
 
@@ -77,9 +77,18 @@ add_custom_target(
 
 # Ensure the C library is built before tests
 add_dependencies(setup_venv ${PROJECT_NAME})
+set(PDF_PATHS "test/AES_ECB.pdf" "test/AES_CBC.pdf" "test/AES_CFB.pdf")
+add_test(
+    NAME Export_Vectors_C_Header
+    COMMAND ${VENV_PYTHON} test/export_vectors.py --format c --pdf ${PDF_PATHS}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(Export_Vectors_C_Header PROPERTIES
+    TIMEOUT 30
+    DEPENDS "setup_venv"
+)
 
 # Test 1: C library test (via direct execution)
-# The C binary has its own hardcoded NIST test vectors
 add_test(
     NAME C_AES_Implementation
     COMMAND ${PROJECT_NAME}
@@ -88,48 +97,19 @@ add_test(
 
 set_tests_properties(C_AES_Implementation PROPERTIES
     TIMEOUT 10
+    DEPENDS "Export_Vectors_C_Header"
 )
-
-# Tests 2-4: Python tests (PDF parsing)
-# Uses hardcoded PDF_URL by default, but can be overridden via environment variable:
-#   export PDF_URL=current-dir/AES_ModesA_All.pdf
-#   ctest
-
-set(DEFAULT_PDF_URL "test/AES_ModesA_All.pdf")
-
-if(DEFINED ENV{PDF_URL})
-    set(PDF_PATH "$ENV{PDF_URL}")
-else()
-    set(PDF_PATH "${DEFAULT_PDF_URL}")
-endif()
 
 # Python tests depend on venv setup
 add_test(
     NAME AES_NIST_Vectors_PDF
-    COMMAND ${VENV_PYTHON} test/test_runner.py --pdf-path "${PDF_PATH}" --verbose
+    COMMAND ${VENV_PYTHON} test/test_runner.py --verbose --pdf-path ${PDF_PATHS}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 set_tests_properties(AES_NIST_Vectors_PDF PROPERTIES
     TIMEOUT 30
-    DEPENDS "setup_venv"
-)
-
-add_test(
-    NAME Export_Vectors_JSON
-    COMMAND ${VENV_PYTHON} test/export_vectors.py --pdf "${PDF_PATH}" --format json
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-set_tests_properties(Export_Vectors_JSON PROPERTIES
-    TIMEOUT 30
-    DEPENDS "setup_venv"
-)
-
-add_test(
-    NAME Export_Vectors_C_Header
-    COMMAND ${VENV_PYTHON} test/export_vectors.py --pdf "${PDF_PATH}" --format c
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS "Export_Vectors_C_Header"
 )
 
 set_tests_properties(Export_Vectors_C_Header PROPERTIES
