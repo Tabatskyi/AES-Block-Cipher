@@ -1,8 +1,13 @@
 import ctypes # allows to work with c code
 import os
+import sys
 
 # importing our builded shared library
-libaes = ctypes.CDLL(os.path.abspath("./libaes.so"))
+lib_ext = ".dll" if sys.platform == "win32" else ".dylib" if sys.platform == "darwin" else ".so"
+lib_path = os.path.abspath(f"./libaes{lib_ext}")
+if not os.path.exists(lib_path):
+    lib_path = os.path.abspath(f"./build/libaes{lib_ext}")
+libaes = ctypes.CDLL(lib_path)
 
 # describing c-structure using aes.h
 AES_BLOCK_SIZE = 16

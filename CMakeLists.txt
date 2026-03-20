@@ -46,6 +46,19 @@ if(WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE bcrypt)
 endif()
 
+add_library(aes SHARED
+    aes.c
+    rng.c
+)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(aes PRIVATE -Wall -Wextra -Wpedantic)
+elseif(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(aes PRIVATE /W4 /WX-)
+endif()
+if(WIN32)
+    target_link_libraries(aes PRIVATE bcrypt)
+endif()
+
 # ============================================================================
 # CTest Integration
 # ============================================================================
@@ -113,6 +126,26 @@ set_tests_properties(AES_NIST_Vectors_PDF PROPERTIES
 )
 
 set_tests_properties(Export_Vectors_C_Header PROPERTIES
+    TIMEOUT 30
+    DEPENDS "setup_venv"
+)
+
+add_test(
+    NAME Padding_Oracle_Attack
+    COMMAND ${VENV_PYTHON} attacks/padding_oracle_attack.py
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(Padding_Oracle_Attack PROPERTIES
+    TIMEOUT 30
+    DEPENDS "setup_venv"
+)
+
+add_test(
+    NAME Bit_Flipping_Attack
+    COMMAND ${VENV_PYTHON} attacks/bit_flipping_attack.py
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(Bit_Flipping_Attack PROPERTIES
     TIMEOUT 30
     DEPENDS "setup_venv"
 )
